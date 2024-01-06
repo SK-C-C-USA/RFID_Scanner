@@ -59,13 +59,6 @@ class MainActivity : AppCompatActivity() {
         textView?.text = "RFID Tag ID: $tagId"
     }
 
-//    private fun extractTagId(intent: Intent): String {
-//        // Replace this with the actual logic to extract the RFID tag ID
-//        // from the intent based on the RFID library you are using
-//        return "1234567890"
-//    }
-
-    //
     private fun extractTagId(intent: Intent): String {
         val tag = intent.getParcelableExtra<Tag>(NfcAdapter.EXTRA_TAG)
 
