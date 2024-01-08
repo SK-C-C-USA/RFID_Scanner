@@ -7,6 +7,12 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.nfc.NfcAdapter
 import android.nfc.Tag
+import android.util.Log
+import java.io.BufferedReader
+import java.io.IOException
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : AppCompatActivity() {
     private var nfcAdapter: NfcAdapter? = null
@@ -57,6 +63,7 @@ class MainActivity : AppCompatActivity() {
         // Handle the RFID tag data here
         val tagId = extractTagId(intent)
         textView?.text = "RFID Tag ID: $tagId"
+        createRecord(tagId)
     }
 
     private fun extractTagId(intent: Intent): String {
@@ -93,5 +100,53 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         enableNfcForegroundDispatch()
+    }
+
+    private fun readUrlFromFile(): String? {
+        try {
+            val inputStream = assets.open("url.txt")
+            val bufferedReader = BufferedReader(InputStreamReader(inputStream))
+            val url = bufferedReader.readLine()
+            bufferedReader.close()
+            return url
+        } catch (e: IOException) {
+            e.printStackTrace()
+            return null
+        }
+    }
+    private fun createRecord(userCode: String) {
+        Thread {
+            try {
+                val url_text = readUrlFromFile()
+                if (url_text != null) {
+                    val url = URL(url_text)
+                    (url.openConnection() as HttpURLConnection).apply {
+                        requestMethod = "POST"
+                        setRequestProperty("Content-Type", "application/json; utf-8")
+                        doOutput = true
+
+                        val jsonInputString = "{\"code\": \"$userCode\"}"
+                        outputStream.use { os ->
+                            val input = jsonInputString.toByteArray(Charsets.UTF_8)
+                            os.write(input, 0, input.size)
+                        }
+
+                        BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8)).use { br ->
+                            val response = StringBuilder()
+                            var responseLine: String?
+                            while (br.readLine().also { responseLine = it } != null) {
+                                response.append(responseLine!!.trim())
+                            }
+                            Log.i("RFID_Scanner", response.toString())
+                        }
+                    }
+                } else {
+                    // Handle the case where reading the URL failed
+                    Log.e("RFID_Scanner", "Failed to read URL from file")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }.start()
     }
 }
