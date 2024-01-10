@@ -8,6 +8,8 @@ import android.content.IntentFilter
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.util.Log
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStreamReader
@@ -62,9 +64,20 @@ class MainActivity : AppCompatActivity() {
     private fun handleNfcIntent(intent: Intent) {
         // Handle the RFID tag data here
         val tagId = extractTagId(intent)
-        textView?.text = "RFID Tag ID: $tagId"
         createRecord(tagId)
+
+        // Add the following code to navigate back to the main screen after 5 seconds
+        Thread {
+            Thread.sleep(5000) // Sleep for 5 seconds
+
+            runOnUiThread {
+                val intent = Intent(this, MainActivity::class.java)
+                startActivity(intent)
+                finish()
+            }
+        }.start()
     }
+
 
     private fun extractTagId(intent: Intent): String {
         val tag = intent.getParcelableExtra<Tag>(NfcAdapter.EXTRA_TAG)
@@ -119,26 +132,23 @@ class MainActivity : AppCompatActivity() {
             try {
                 val url_text = readUrlFromFile()
                 if (url_text != null) {
-                    val url = URL(url_text)
-                    (url.openConnection() as HttpURLConnection).apply {
-                        requestMethod = "POST"
-                        setRequestProperty("Content-Type", "application/json; utf-8")
-                        doOutput = true
+                    // Step 1: Get user information based on the provided code
+                    val user = getUserInfo(url_text, userCode)
 
-                        val jsonInputString = "{\"code\": \"$userCode\"}"
-                        outputStream.use { os ->
-                            val input = jsonInputString.toByteArray(Charsets.UTF_8)
-                            os.write(input, 0, input.size)
+                    runOnUiThread {
+                        if (user != null) {
+                            // User found, display the name
+                            val userName = user.getString("name")
+                            textView?.text = "User Name: $userName"
+                        } else {
+                            // User not found, display a message
+                            textView?.text = "관리자 (dev@skccus.com)에게 등록을 요청하세요."
                         }
+                    }
 
-                        BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8)).use { br ->
-                            val response = StringBuilder()
-                            var responseLine: String?
-                            while (br.readLine().also { responseLine = it } != null) {
-                                response.append(responseLine!!.trim())
-                            }
-                            Log.i("RFID_Scanner", response.toString())
-                        }
+                    if (user != null) {
+                        // Step 2: Send the tagging record to the server
+                        sendTaggingRecord(url_text, user.getString("id"))
                     }
                 } else {
                     // Handle the case where reading the URL failed
@@ -148,5 +158,72 @@ class MainActivity : AppCompatActivity() {
                 e.printStackTrace()
             }
         }.start()
+    }
+
+    private fun getUserInfo(baseUrl: String, userCode: String): JSONObject? {
+        try {
+            val url = URL("$baseUrl/users/")
+            (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("Accept", "application/json")
+
+                BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8)).use { br ->
+                    val response = StringBuilder()
+                    var responseLine: String?
+                    while (br.readLine().also { responseLine = it } != null) {
+                        response.append(responseLine!!.trim())
+                    }
+
+                    val userList = JSONArray(response.toString())
+
+                    // Find the user with the specified code
+                    for (i in 0 until userList.length()) {
+                        val user = userList.getJSONObject(i)
+                        if (user.getString("code") == userCode) {
+                            return user
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
+    }
+
+    private fun sendTaggingRecord(baseUrl: String, userId: String) {
+        try {
+            val url = URL("$baseUrl/records/")
+            (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json; utf-8")
+                doOutput = true
+
+                // Create a JSON object for the tagging record
+                val jsonInputString = "{\"user\": $userId}"
+                outputStream.use { os ->
+                    val input = jsonInputString.toByteArray(Charsets.UTF_8)
+                    os.write(input, 0, input.size)
+                }
+
+                BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8)).use { br ->
+                    val response = StringBuilder()
+                    var responseLine: String?
+                    while (br.readLine().also { responseLine = it } != null) {
+                        response.append(responseLine!!.trim())
+                    }
+
+                    // Log the server response
+                    Log.i("RFID_Scanner", response.toString())
+                }
+
+                // Handle UI updates if needed
+                runOnUiThread {
+                    // You can update the UI here if needed
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }
